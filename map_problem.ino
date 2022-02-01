@@ -9,13 +9,13 @@
     Arduino's map() function accepts long and returns long, however it gives wrong results
     even if valid but high value parameters are used.
     
-        long map(long x, long in_min, long in_max, long out_min, long out_max) { ... }
-
-        map( 9000000, 0, 10000000, 0, 1000 ) ==> 9m/10m = 0.9 x 1000 ==> 900
-           but actual result is: 41
-        
-        map( 750, 0, 1000, 0, 10000000 ) ==> 750/1000 = 0.75 x 10,000,000 ==> 7,500,000
-           but actual result is: -1089934
+         map( 9000000, 0, 10000000, 0, 1000 );
+           should be: 9m/10m = 0.9 x 1000 ==> 900
+           but map() returns: 41
+                
+        map( 750, 0, 1000, 0, 10000000 );
+           shold be: 750/1000 = 0.75 x 10,000,000 ==> 7,500,000
+           but map() returns: -1089934
 
     This happens because of overflow. Several alternatives were tested for speed and accuracy.
     The ones with less impact for non-overflow conditions were prioritized.
@@ -37,11 +37,12 @@
     - for Arduino Uno, skip checking
     - don't bother saving interim results, either compiler optimizes it anyway or it is just slower
 
-    WITH CHECKING:
+    WITH CHECKING, if overflow run alternate code:
        Arduino:  +40 % if there is no overflow
                  +98 % if there is overflow to fix
        ESP32:     +6 % if there is no overflow
                 +251 % if there is overflow to fix
+
     long mapCheckAndFloatFix2(long x, long in_min, long in_max, long out_min, long out_max ) {
         long result;
         if ( __builtin_smull_overflow( x - in_min, out_max - out_min, &result ) ) {
@@ -50,11 +51,12 @@
         return result / (in_max - in_min) + out_min;
     }
 
-    NO CHECKING, JUST FIX:
+    NO CHECKING, always run overflow safe code:
        Arduino:  +33 % if there is no overflow
                  +56 % if there is overflow to fix
        ESP32:   +269 % if there is no overflow
                 +271 % if there is overflow to fix
+
     long mapLongLong2( long x, long in_min, long in_max, long out_min, long out_max ) {
         return ( (long long)(x - in_min) * (long long)(out_max - out_min) ) / (in_max - in_min) + out_min;
     }
@@ -147,7 +149,7 @@
     run 2: mapFloat1               = 8.99  *
     run 2: mapFloat2               = 8.99  *
     run 2: mapLongLong1            = 4.87  
-    run 2: mapLongLong2            = 4.88  <-- is checking is skipped, cost = 3.56 ms, +269 %
+    run 2: mapLongLong2            = 4.88  <-- if checking is skipped, cost = 3.56 ms, +269 %
 
     map (this library)      = 41, 901, -200, -99, 10000201, 9999873, 71, -108, 705033, -1089934,         <-- WRONG
     mapArduino              = 41, 900, -200, -100, 10000200, 9999872, 70, -108, 705032, -1089934,        <-- WRONG
